@@ -57,6 +57,13 @@ All operations start from the authenticated `user` object.
 - `user.getOrderRequests()`, `user.getPurchaseOrders()`
 
 ### Experiments
+
+The `custom_identifier` field on experiments holds the **SK number** (e.g. `"SK543"`), which is the lab's primary unique identifier for experiments. Use it to look up or display experiments:
+```python
+exp = user.getExperiment(id)
+print(exp.custom_identifier)  # e.g. "SK543"
+```
+
 ```python
 exp = user.newExperiment('My Experiment')
 exp.edit(name=None, entry=None, started_at=None)
@@ -157,7 +164,7 @@ loc.createPositionMap(rowCount, columnCount, data)
 ```python
 exps = user.getExperiments(search_query='PCR', count=20)
 for e in exps:
-    print(e.id, e.name)
+    print(e.custom_identifier, e.name)  # e.g. "SK543 PCR optimisation"
 ```
 
 **Add metadata to experiment:**
