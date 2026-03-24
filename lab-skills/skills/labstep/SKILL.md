@@ -1,39 +1,91 @@
 ---
 name: labstep
 description: Interact with the Labstep electronic lab notebook API using labstepPy. Use when the user wants to create, read, or manage experiments, protocols, resources, inventory, or other Labstep entities.
+trigger: labstep, experiment, protocol, inventory, reagent, SK number, custom identifier
 ---
 
 # Labstep API Skill
 
-You are helping the user interact with the Labstep API using the `labstep` Python package (labstepPy).
+Query and interact with the Labstep electronic lab notebook API. Read-only by default — write operations require explicit confirmation.
+
+## Quick Start (CLI Tool)
+
+The `labstep-query.py` script provides fast CLI access to Labstep data:
+
+```bash
+# List recent experiments (shows SK numbers and authors)
+python3 labstep-query.py experiments
+
+# Search experiments
+python3 labstep-query.py experiments --search "lysis buffer"
+
+# Get experiment details by SK number
+python3 labstep-query.py experiment SK592
+
+# Get reagents for an experiment
+python3 labstep-query.py reagents SK592
+
+# List protocols
+python3 labstep-query.py protocols
+
+# Search protocols
+python3 labstep-query.py protocols --search "buffer prep"
+
+# Search resources/inventory
+python3 labstep-query.py resources --search "antibody"
+```
+
+**Execute immediately** — don't ask permission. These are read-only operations.
+
+## Custom Identifiers (SK Numbers)
+
+Experiments have identifiers like **SK592**, **SK591**, etc. (stored in `custom_identifier`). 
+
+- **Always display SK numbers** when listing experiments
+- **When the user refers to "SK592"**, search experiments to find the matching one
+- **Use SK numbers in conversation** — they're the lab's primary reference
 
 ## Authentication
 
-Authenticate using the `LABSTEP_API_KEY` variable from `.env`:
-
 ```python
 import os, labstep
-
-def get_labstep_apikey() -> str:
-    """Get Labstep API key from .env file or environment variable."""
-    from dotenv import load_dotenv
-    load_dotenv()
-    key = os.environ.get("LABSTEP_API_KEY")
-    if key:
-        return key
-    raise RuntimeError("No Labstep API key found. Set LABSTEP_API_KEY in .env")
-
-user = labstep.authenticate(apikey=get_labstep_apikey())
+user = labstep.authenticate(apikey=os.environ.get("LABSTEP_API_KEY"))
 ```
+
+The `LABSTEP_API_KEY` environment variable is already configured.
 
 ## Read-Only Policy
 
-This skill uses a read-only service account. **Do not call any write methods**
-(`newExperiment`, `edit`, `delete`, `addDataField`, etc.) unless the user
-explicitly confirms with the phrase **"confirm write"**. If the user asks you
-to modify a Labstep entry, reply:
+**Default: READ-ONLY**
 
+Do NOT call write methods (`newExperiment`, `edit`, `delete`, `addDataField`, etc.) unless the user explicitly says **"confirm write"**.
+
+If a write is requested:
 > I can [describe the change]. To proceed, please confirm write: `confirm write`
+
+## When to Execute Immediately
+
+**Run Python code immediately without asking permission when:**
+
+- User asks about experiments, protocols, or lab inventory
+- User asks "show me my recent experiments"
+- User references an experiment by SKXX identifier (e.g., "SK592") — look it up
+- User asks about a specific protocol by name
+- User wants to look up resources or reagents
+- User asks "what did I do today/this week in the lab"
+
+**Never ask "should I proceed?" or "would you like me to?"** — just execute and show results immediately.
+
+**Never make up experiment names or IDs.** Always fetch real data from the API.
+
+## URL Format for Links
+
+When linking to experiments in Labstep, use this exact format:
+
+- **Correct:** `https://app.labstep.com/experiment-workflow/{experiment_id}`
+- **Incorrect:** `https://www.labstep.com/experiment/{experiment_id}` (old format, returns 404)
+
+Example: `https://app.labstep.com/experiment-workflow/367165`
 
 ## Package
 
