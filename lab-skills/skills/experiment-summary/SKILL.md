@@ -405,7 +405,8 @@ def fill_experiment_summary(
 
 ### Step 6 — Save and report
 
-- Save as `<experiment_id>_Experiment_Summary.docx` in the current working directory
+- Save as `<experiment_id>_Experiment_Summary_<user_first_name>.docx` in the current working directory, where `<user_first_name>` is the first name of the user who requested the summary (e.g. `SK550_Experiment_Summary_Mrinal.docx`). If the user's name is not available, fall back to `<experiment_id>_Experiment_Summary.docx`.
+- Include `MEDIA:<output_path>` in your reply to attach the document in chat.
 - Tell the user the output path
 - **Never overwrite the template**
 - **Never write any file to OneDrive paths**
