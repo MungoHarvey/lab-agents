@@ -88,6 +88,11 @@ def preprocess_audio(audio_bytes: bytes, source_format: str = "ogg") -> str:
             ["ffmpeg", "-y", "-i", input_path, "-ar", "16000", "-ac", "1", output_path],
             capture_output=True, check=True
         )
+    except subprocess.CalledProcessError:
+        # Clean up partial output file if ffmpeg failed
+        if os.path.exists(output_path):
+            os.unlink(output_path)
+        raise
     finally:
         os.unlink(input_path)
 
@@ -262,7 +267,7 @@ def get_labstep_apikey() -> str:
         return key
     raise RuntimeError("No Labstep API key found. Set LABSTEP_API_KEY in .env")
 
-def fetch_experiment_context(sk_number: str, user=None) -> dict:
+def fetch_experiment_context(sk_number: str, user=None) -> tuple[dict, object]:
     """
     Fetch experiment metadata from Labstep for domain vocabulary.
     Returns a dict with protocol_body, reagents, data_fields, comments, gene_names.
@@ -310,7 +315,8 @@ def fetch_experiment_context(sk_number: str, user=None) -> dict:
     except Exception:
         context["reagents"] = []
 
-    # Data fields (~300 tokens)
+    # Data fields (~300 tokens) and gene names (~500 tokens)
+    data_fields = []
     try:
         data_fields = exp.getDataFields()
         context["data_fields"] = [
@@ -330,8 +336,7 @@ def fetch_experiment_context(sk_number: str, user=None) -> dict:
     except Exception:
         context["recent_comments"] = []
 
-    # Gene names (~500 tokens)
-    # Extract from data fields and protocol body — gene names often appear
+    # Gene names — extracted from data fields; gene names often appear
     # in fields like "Target Gene", "Gene", or within protocol text
     try:
         gene_fields = [
