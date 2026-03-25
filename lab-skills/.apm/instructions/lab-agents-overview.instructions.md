@@ -50,6 +50,11 @@ All skills are located in `.claude/skills/` and are auto-triggered based on cont
 - **Trigger**: `/experiment-summary` or "write up an experiment"
 - **Data sources**: Labstep (metadata) + OneDrive (QC files)
 
+### 7. **voice-note**
+- **Purpose**: Transcribe Telegram/Slack voice notes, correct with experiment context, and post to Labstep
+- **Trigger**: OpenClaw delivers audio bytes, or user asks to transcribe a voice note
+- **Dependencies**: Fireworks Whisper API, Labstep, ffmpeg
+
 ## Labstep Credentials
 
 The `labstep` skill uses a service account with read-write access:

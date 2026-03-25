@@ -31,6 +31,10 @@ yarn.lock
 *.tmp
 *.log
 
+# Voice note transient data
+voice-note-unmatched/
+voice-note-fallback/
+
 # APM
 apm_modules/
 CLAUDE.md
