@@ -31,10 +31,6 @@ yarn.lock
 *.tmp
 *.log
 
-# Lab note transient data
-lab-note-unmatched/
-lab-note-fallback/
-
 # APM
 apm_modules/
 CLAUDE.md

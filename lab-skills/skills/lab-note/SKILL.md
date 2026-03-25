@@ -367,25 +367,10 @@ If none found, return [].
 
 If all strategies yield no match:
 
-1. Save content to `lab-note-unmatched/{timestamp}_{user}.txt`
-2. Reply via OpenClaw to the originating thread:
+1. Reply via OpenClaw to the originating thread:
    `"Could not find an SK number in this note. Please reply with the SK number (e.g., SK543)."`
-3. If the user replies with an SK number, resume from Stage 3
-4. If no reply within 24 hours, content stays in the unmatched directory for manual review
-
-```python
-import os
-from datetime import datetime
-
-def save_unmatched(content: str, user: str) -> str:
-    """Save content locally when no SK number is found."""
-    os.makedirs("lab-note-unmatched", exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    path = f"lab-note-unmatched/{ts}_{user}.txt"
-    with open(path, "w") as f:
-        f.write(content)
-    return path
-```
+2. If the user replies with an SK number, resume from Stage 3
+3. Do **not** save unmatched content locally — it stays in the agent's context until the user responds or the session ends
 
 ### Stage 3: Labstep Context Fetch
 
@@ -606,18 +591,7 @@ def upload_file_to_experiment(exp, file_path: str):
     exp.addFile(file_path)
 ```
 
-**Error handling**: If posting fails, save content locally:
-
-```python
-def save_fallback(content: str, sk_number: str, user_name: str) -> str:
-    """Save content locally if Labstep post fails."""
-    os.makedirs("lab-note-fallback", exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    path = f"lab-note-fallback/{ts}_{sk_number}_{user_name}.txt"
-    with open(path, "w") as f:
-        f.write(content)
-    return path
-```
+**Error handling**: If `addComment()` fails, report the error to the user via OpenClaw with the content that failed to post. Do not save locally.
 
 ## Full Pipeline
 
@@ -682,10 +656,10 @@ def process_lab_note(
     validated = validate_sk_numbers(sk_numbers, ls_user)
 
     if not validated:
-        fallback_content = raw_transcript or caption or file_name or "No text content"
-        path = save_unmatched(fallback_content, user_name)
-        # Reply via OpenClaw: "Could not find an SK number..."
-        return {"status": "unmatched", "content": fallback_content, "saved_to": path}
+        # Reply via OpenClaw: "Could not find an SK number in this note.
+        # Please reply with the SK number (e.g., SK543)."
+        # Do not save locally — content stays in agent context until user responds.
+        return {"status": "unmatched", "message": "No SK number found"}
 
     # Stages 3-5: For each matched experiment
     results = []
@@ -734,8 +708,8 @@ def process_lab_note(
 
             results.append({"sk": sk, "status": "posted", "comment": body})
         except Exception as e:
-            path = save_fallback(body, sk, user_name)
-            results.append({"sk": sk, "status": "fallback", "saved_to": path, "error": str(e)})
+            # Report error via OpenClaw — do not save locally
+            results.append({"sk": sk, "status": "error", "body": body, "error": str(e)})
 
     # Cleanup temp files
     for path in [temp_image_path, temp_file_path]:
@@ -753,8 +727,8 @@ def process_lab_note(
 | Whisper API fails (3 retries) | Stop audio processing, report to user |
 | Image corrupt/unreadable | Skip image, process other media types |
 | File unreadable | Skip file, process other media types |
-| No SK number found | Save locally, reply via OpenClaw asking for SK number |
+| No SK number found | Reply via OpenClaw asking for SK number |
 | SK not in Labstep | Show content, ask user to verify/correct |
-| Labstep addComment fails | Save content locally as fallback |
+| Labstep addComment fails | Report error via OpenClaw with the failed content |
 | Labstep addFile fails | Log warning, comment still posted |
 | Image too large (>4MB) | Auto-resize with Pillow before upload |
