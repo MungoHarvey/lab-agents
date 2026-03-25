@@ -421,3 +421,76 @@ def save_fallback(cleaned_transcript: str, sk_number: str, user_name: str):
         f.write(cleaned_transcript)
     return path
 ```
+
+## Full Pipeline
+
+When triggered, execute stages 0–5 in order. Here is the complete orchestration:
+
+```python
+def process_voice_note(audio_bytes: bytes, user_name: str, platform: str,
+                       source_format: str = "ogg"):
+    """
+    Full pipeline: preprocess → transcribe → extract SK → fetch context →
+    clean → post comment.
+    """
+    # Stage 0: Pre-process audio
+    audio_path = preprocess_audio(audio_bytes, source_format)
+
+    try:
+        # Stage 1: Transcribe
+        raw_transcript = transcribe(audio_path)
+    finally:
+        # Clean up temp audio file
+        if os.path.exists(audio_path):
+            os.unlink(audio_path)
+
+    # Stage 2: Extract SK number(s)
+    # Authenticate once and reuse throughout the pipeline
+    ls_user = labstep.authenticate(apikey=get_labstep_apikey())
+
+    sk_numbers = extract_sk_regex(raw_transcript)
+
+    if not sk_numbers:
+        # Try LLM extraction (done inline by the agent — see Stage 2 prompt)
+        # The agent parses the transcript for spoken SK variants
+        # and may cross-reference against recent experiments:
+        recent_sks = get_recent_sk_numbers(ls_user)
+        pass  # Agent fills in sk_numbers from LLM extraction + recent_sks
+
+    validated = validate_sk_numbers(sk_numbers, ls_user)
+
+    if not validated:
+        path = save_unmatched(raw_transcript, user_name)
+        # Reply via OpenClaw: "Could not find an SK number..."
+        return {"status": "unmatched", "transcript": raw_transcript, "saved_to": path}
+
+    # Stages 3-5: For each matched experiment
+    results = []
+    for sk in validated:
+        context, exp = fetch_experiment_context(sk, user=ls_user)
+
+        # Stage 4: Clean & correct (done inline by the agent using the prompt template)
+        # The agent reads raw_transcript + context and produces cleaned_transcript
+        cleaned_transcript = raw_transcript  # Placeholder — agent replaces with cleaned version
+
+        # Stage 5: Post comment
+        try:
+            body = post_voice_note_comment(exp, cleaned_transcript, user_name, platform)
+            results.append({"sk": sk, "status": "posted", "comment": body})
+        except Exception as e:
+            path = save_fallback(cleaned_transcript, sk, user_name)
+            results.append({"sk": sk, "status": "fallback", "saved_to": path, "error": str(e)})
+
+    return {"status": "complete", "results": results}
+```
+
+## Error Summary
+
+| Error | Behaviour |
+|-------|-----------|
+| ffmpeg missing/fails | Stop pipeline, report to user |
+| Whisper API fails (3 retries) | Stop pipeline, report to user |
+| No SK number found | Save locally, reply via OpenClaw asking for SK number |
+| SK not in Labstep | Show transcript, ask user to verify/correct |
+| Labstep addComment fails | Save transcript locally as fallback |
+| Audio format unknown | Attempt ffmpeg transcode; if that fails, report to user |
