@@ -149,3 +149,98 @@ def transcribe(audio_path: str) -> str:
 ```python
 os.unlink(audio_path)
 ```
+
+### Stage 2: Extract SK Number
+
+Multi-strategy extraction to find SK experiment number(s) in the transcript.
+
+**Strategy 1 — Regex:**
+```python
+import re
+
+def extract_sk_regex(transcript: str) -> list[str]:
+    """Extract SK numbers via regex. Returns e.g. ['SK543', 'SK544']."""
+    matches = re.findall(r'\bSK\s?(\d{3,})\b', transcript, re.IGNORECASE)
+    return [f"SK{m}" for m in matches]
+```
+
+**Strategy 2 — LLM extraction:**
+
+If regex finds nothing, use this prompt to extract spoken SK numbers:
+
+```
+You are extracting experiment SK numbers from a voice note transcript.
+SK numbers are 3+ digit identifiers like SK543, SK1024, etc.
+They may be spoken as:
+- "S K five four three" or "S. K. 543"
+- "experiment five forty three"
+- "the five four three experiment"
+
+Transcript:
+{transcript}
+
+Return ONLY a JSON array of SK numbers found, e.g. ["SK543", "SK544"].
+If none found, return [].
+```
+
+**Strategy 3 — Labstep validation:**
+
+Validate all candidates against real experiments:
+
+```python
+import labstep
+
+def validate_sk_numbers(candidates: list[str], user) -> list[str]:
+    """
+    Check each candidate SK number against Labstep.
+    Returns only those that match a real experiment's custom_identifier.
+    """
+    if not candidates:
+        return []
+
+    validated = []
+    for sk in candidates:
+        results = user.getExperiments(search_query=sk, count=5)
+        for exp in results:
+            if exp.custom_identifier and exp.custom_identifier.upper() == sk.upper():
+                validated.append(sk)
+                break
+    return validated
+
+
+def get_recent_sk_numbers(user, count: int = 20) -> list[str]:
+    """
+    Fetch recent experiment SK numbers for fuzzy matching.
+    Useful when LLM extraction produces bare numbers without 'SK' prefix.
+    """
+    recent = user.getExperiments(count=count)
+    return [
+        exp.custom_identifier
+        for exp in recent
+        if exp.custom_identifier
+    ]
+```
+
+**Fallback — no SK found:**
+
+If all three strategies yield no match:
+
+1. Save transcript to `voice-note-unmatched/{timestamp}_{user}.txt`
+2. Reply via OpenClaw to the originating thread:
+   `"Could not find an SK number in this voice note. Please reply with the SK number (e.g., SK543)."`
+3. If the user replies with an SK number, resume from Stage 3
+4. If no reply within 24 hours, transcript stays in the unmatched directory for manual review
+
+```python
+import os
+from datetime import datetime
+
+def save_unmatched(transcript: str, user: str) -> str:
+    """Save transcript locally when no SK number is found."""
+    os.makedirs("voice-note-unmatched", exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    path = f"voice-note-unmatched/{ts}_{user}.txt"
+    with open(path, "w") as f:
+        f.write(transcript)
+    return path
+```
