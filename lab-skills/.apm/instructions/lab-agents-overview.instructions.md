@@ -10,7 +10,7 @@ version: 1.0.0
 ## Overview
 
 This is a shared agent environment for the Imperial Lab team. Agents have access to:
-- **Labstep**: Lab notebook (read-only by default)
+- **Labstep**: Lab notebook (read-write access)
 - **OneDrive (SharePoint)**: Shared data files via synced OneDrive folders (strictly read-only)
 
 ## Available Skills
@@ -20,7 +20,7 @@ All skills are located in `.claude/skills/` and are auto-triggered based on cont
 ### 1. **labstep**
 - **Purpose**: Fetch and query Labstep experiments, protocols, and inventory
 - **Trigger**: Questions about experiments, protocols, or lab records
-- **Access**: Read-only (see below)
+- **Access**: Read-write (see Labstep Credentials below)
 
 ### 2. **labstep-sentiment**
 - **Purpose**: Summarise key findings and researcher thoughts from lab notes
@@ -52,9 +52,9 @@ All skills are located in `.claude/skills/` and are auto-triggered based on cont
 
 ## Labstep Credentials
 
-The `labstep` skill uses a dedicated read-only service account:
+The `labstep` skill uses a service account with read-write access:
 - **Account**: `lab-agent-readonly@imperial.ac.uk`
-- **Permission level**: Workspace **Viewer** role
+- **Permission level**: Workspace **Editor** role
 - **API key location**: `.env` file (`LABSTEP_API_KEY`)
 
 ## Team Workflows
@@ -63,12 +63,12 @@ The `labstep` skill uses a dedicated read-only service account:
 1. Read experiment data directly from OneDrive synced folders (via `read-from-sharepoint` skill)
 2. Query `nucleic-acid-analysis` or other analysis skills against OneDrive data
 3. Use `pptx` skill to generate reports/presentations
-4. All output files are saved locally in the working directory — no write-back to OneDrive or Labstep without explicit user request + confirmation
+4. All output files are saved locally in the working directory — Labstep writes (e.g., comments) happen automatically for automated pipelines; OneDrive is strictly read-only
 
 ### Lab Queries
 1. Use `labstep` skill to fetch experiments/protocols
 2. Use `labstep-sentiment` for trend analysis
-3. Results are read-only; modifications require user confirmation
+3. Results can be read or written to (e.g., comments posted by automated skills)
 
 ## Contacting Admin
 

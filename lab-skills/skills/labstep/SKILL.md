@@ -54,14 +54,11 @@ user = labstep.authenticate(apikey=os.environ.get("LABSTEP_API_KEY"))
 
 The `LABSTEP_API_KEY` environment variable is already configured.
 
-## Read-Only Policy
+## Write Access
 
-**Default: READ-ONLY**
-
-Do NOT call write methods (`newExperiment`, `edit`, `delete`, `addDataField`, etc.) unless the user explicitly says **"confirm write"**.
-
-If a write is requested:
-> I can [describe the change]. To proceed, please confirm write: `confirm write`
+This skill uses a service account with read-write access. Automated pipelines
+(e.g., lab-note skill) may write without confirmation. For interactive
+sessions, describe what will be written before executing.
 
 ## When to Execute Immediately
 
