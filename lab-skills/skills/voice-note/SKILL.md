@@ -384,3 +384,40 @@ from their Labstep experiment to help correct domain-specific terms.
 This is executed inline as part of the agent's response — no separate API call needed.
 The agent reads the raw transcript, applies the prompt mentally, and produces the
 cleaned version.
+
+### Stage 5: Post Comment to Labstep
+
+Post the cleaned transcript as a comment on the experiment thread.
+
+```python
+def post_voice_note_comment(exp, cleaned_transcript: str, user_name: str, platform: str):
+    """
+    Post the cleaned transcript as a comment on the Labstep experiment.
+    If multiple experiments matched, call this for each.
+    """
+    body = f"🎤 {user_name} (via {platform}): {cleaned_transcript}"
+    exp.addComment(body)
+    return body
+```
+
+**Multiple experiments**: If Stage 2 found multiple SK numbers, loop through each:
+
+```python
+for sk_number in validated_sk_numbers:
+    context, exp = fetch_experiment_context(sk_number)
+    # ... run Stage 4 clean & correct with this experiment's context ...
+    post_voice_note_comment(exp, cleaned_transcript, user_name, platform)
+```
+
+**Error handling**: If `addComment()` fails, save the cleaned transcript locally:
+
+```python
+def save_fallback(cleaned_transcript: str, sk_number: str, user_name: str):
+    """Save transcript locally if Labstep post fails."""
+    os.makedirs("voice-note-fallback", exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    path = f"voice-note-fallback/{ts}_{sk_number}_{user_name}.txt"
+    with open(path, "w") as f:
+        f.write(cleaned_transcript)
+    return path
+```
