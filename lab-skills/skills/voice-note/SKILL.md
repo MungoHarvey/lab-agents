@@ -95,3 +95,57 @@ def preprocess_audio(audio_bytes: bytes, source_format: str = "ogg") -> str:
 ```
 
 **Error handling**: If ffmpeg is not installed or transcoding fails, report the error and stop the pipeline.
+
+### Stage 1: Transcribe with Fireworks Whisper
+
+Send pre-processed audio to the Fireworks Whisper API.
+
+```python
+import os
+import time
+import requests
+from dotenv import load_dotenv
+
+def get_fireworks_apikey() -> str:
+    load_dotenv()
+    key = os.environ.get("FIREWORKS_API_KEY")
+    if key:
+        return key
+    raise RuntimeError("No Fireworks API key found. Set FIREWORKS_API_KEY in .env")
+
+def transcribe(audio_path: str) -> str:
+    """
+    Send audio file to Fireworks Whisper API. Retries up to 3 times
+    on transient failures with delays of 2s, 5s, 10s.
+    Returns the transcript text.
+    """
+    url = "https://audio-turbo.us-virginia-1.direct.fireworks.ai/v1/audio/transcriptions"
+    headers = {"Authorization": f"Bearer {get_fireworks_apikey()}"}
+
+    delays = [2, 5, 10]
+    last_error = None
+
+    for attempt in range(3):
+        try:
+            with open(audio_path, "rb") as f:
+                resp = requests.post(
+                    url,
+                    headers=headers,
+                    files={"file": f},
+                    data={"model": "whisper-v3-turbo"},
+                    timeout=60,
+                )
+            resp.raise_for_status()
+            return resp.json()["text"]
+        except (requests.RequestException, KeyError) as e:
+            last_error = e
+            if attempt < 2:
+                time.sleep(delays[attempt])
+
+    raise RuntimeError(f"Transcription failed after 3 attempts: {last_error}")
+```
+
+**Cleanup**: After transcription, delete the temporary audio file:
+```python
+os.unlink(audio_path)
+```
