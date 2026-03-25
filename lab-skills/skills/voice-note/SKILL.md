@@ -244,3 +244,107 @@ def save_unmatched(transcript: str, user: str) -> str:
         f.write(transcript)
     return path
 ```
+
+### Stage 3: Labstep Context Fetch
+
+Fetch experiment metadata to build a domain vocabulary for transcript correction.
+
+```python
+import os
+import json
+import labstep
+from dotenv import load_dotenv
+
+def get_labstep_apikey() -> str:
+    load_dotenv()
+    key = os.environ.get("LABSTEP_API_KEY")
+    if key:
+        return key
+    raise RuntimeError("No Labstep API key found. Set LABSTEP_API_KEY in .env")
+
+def fetch_experiment_context(sk_number: str, user=None) -> dict:
+    """
+    Fetch experiment metadata from Labstep for domain vocabulary.
+    Returns a dict with protocol_body, reagents, data_fields, comments, gene_names.
+    Accepts an optional pre-authenticated user to avoid redundant auth calls.
+
+    Context budget: ~4000 tokens total.
+    """
+    if user is None:
+        user = labstep.authenticate(apikey=get_labstep_apikey())
+
+    # Look up experiment by SK number
+    results = user.getExperiments(search_query=sk_number, count=5)
+    exp = None
+    for r in results:
+        if r.custom_identifier and r.custom_identifier.upper() == sk_number.upper():
+            exp = r
+            break
+
+    if not exp:
+        raise ValueError(f"Experiment {sk_number} not found in Labstep")
+
+    context = {"sk_number": sk_number, "experiment_name": exp.name}
+
+    # Protocol body (~500 tokens budget → 2000 chars)
+    # Note: Protocol body text lives on protocol-collection.last_version.state
+    # (ProseMirror JSON), not on experiment-linked copies. Try both access patterns.
+    try:
+        protocols = exp.getProtocols()
+        if protocols:
+            proto = protocols[0]
+            # Try ProseMirror state first, fall back to body attribute
+            state = getattr(proto, 'state', None)
+            if state:
+                body = json.dumps(state) if isinstance(state, dict) else str(state)
+            else:
+                body = str(getattr(proto, 'body', '') or '')
+            context["protocol_body"] = body[:2000] + ("[...truncated]" if len(body) > 2000 else "")
+    except Exception:
+        context["protocol_body"] = ""
+
+    # Reagent/resource names (~200 tokens)
+    try:
+        inv_fields = exp.getInventoryFields() if hasattr(exp, 'getInventoryFields') else []
+        context["reagents"] = [f.name for f in inv_fields][:30]
+    except Exception:
+        context["reagents"] = []
+
+    # Data fields (~300 tokens)
+    try:
+        data_fields = exp.getDataFields()
+        context["data_fields"] = [
+            {"name": f.fieldName, "value": str(getattr(f, 'value', '') or '')[:100]}
+            for f in data_fields
+        ][:20]
+    except Exception:
+        context["data_fields"] = []
+
+    # Recent comments (~2000 tokens → last 10, 500 chars each)
+    try:
+        comments = exp.getComments()
+        context["recent_comments"] = [
+            str(getattr(c, 'body', '') or '')[:500]
+            for c in (comments[:10] if comments else [])
+        ]
+    except Exception:
+        context["recent_comments"] = []
+
+    # Gene names (~500 tokens)
+    # Extract from data fields and protocol body — gene names often appear
+    # in fields like "Target Gene", "Gene", or within protocol text
+    try:
+        gene_fields = [
+            str(getattr(f, 'value', '') or '')
+            for f in data_fields
+            if any(kw in (f.fieldName or '').lower() for kw in ['gene', 'target', 'primer'])
+        ]
+        context["gene_names"] = gene_fields[:20]
+    except Exception:
+        context["gene_names"] = []
+
+    return context, exp
+```
+
+The returned `context` dict is serialised to a string and passed to Stage 4.
+The returned `exp` object is used in Stage 5 to post the comment.
