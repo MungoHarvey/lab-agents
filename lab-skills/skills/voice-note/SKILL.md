@@ -348,3 +348,39 @@ def fetch_experiment_context(sk_number: str, user=None) -> dict:
 
 The returned `context` dict is serialised to a string and passed to Stage 4.
 The returned `exp` object is used in Stage 5 to post the comment.
+
+### Stage 4: LLM Clean & Correct
+
+Use Claude (inline, via the agent's own context) to clean and correct the transcript.
+
+**Prompt template:**
+
+```
+You are cleaning a voice note transcript from a lab researcher. You have context
+from their Labstep experiment to help correct domain-specific terms.
+
+## Rules
+1. Remove filler words: "um", "uh", "like", "you know", "sort of", false starts, repeated words
+2. Fix domain terms using the experiment context below — correct misheard scientific
+   vocabulary (e.g., "see tip seek" → "scTIP-seq", "cube it" → "Qubit", "are I any" → "RNA")
+3. Preserve meaning: do NOT summarise, rewrite tone, or add information. Keep the
+   speaker's intent and phrasing intact. Output should read like a tidy lab note.
+4. Return ONLY the cleaned transcript text, nothing else.
+
+## Experiment Context
+- Experiment: {sk_number} — {experiment_name}
+- Protocol: {protocol_body}
+- Reagents: {reagents}
+- Gene names: {gene_names}
+- Data fields: {data_fields}
+- Recent comments: {recent_comments}
+
+## Raw Transcript
+{transcript}
+
+## Cleaned Transcript
+```
+
+This is executed inline as part of the agent's response — no separate API call needed.
+The agent reads the raw transcript, applies the prompt mentally, and produces the
+cleaned version.
