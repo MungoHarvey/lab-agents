@@ -108,7 +108,7 @@ def classify_media(audio_bytes=None, image_bytes=None, file_bytes=None, file_nam
     return types
 ```
 
-#### Audio Pre-processing (unchanged from voice-note)
+#### Audio Pre-processing
 
 Convert incoming audio to a format accepted by the Fireworks Whisper API.
 
