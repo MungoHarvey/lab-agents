@@ -51,3 +51,47 @@ A comment posted on the Labstep experiment thread:
 ```
 🎤 {user} (via {platform}): {cleaned transcript}
 ```
+
+## Pipeline
+
+### Stage 0: Audio Pre-processing
+
+Convert incoming audio to a format accepted by the Fireworks Whisper API.
+
+**Accepted formats**: WAV, MP3, FLAC, OGG
+**Common input**: Telegram sends Opus in OGG containers; Slack sends M4A/AAC.
+
+```python
+import subprocess
+import tempfile
+import os
+
+def preprocess_audio(audio_bytes: bytes, source_format: str = "ogg") -> str:
+    """
+    Write raw audio bytes to a temp file. If not in a Whisper-accepted format,
+    transcode to WAV using ffmpeg. Returns path to the processed audio file.
+    """
+    accepted = {"wav", "mp3", "flac", "ogg"}
+    suffix = f".{source_format}"
+
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+        f.write(audio_bytes)
+        input_path = f.name
+
+    if source_format.lower() in accepted:
+        return input_path
+
+    # Transcode to WAV
+    output_path = input_path.rsplit(".", 1)[0] + ".wav"
+    try:
+        subprocess.run(
+            ["ffmpeg", "-y", "-i", input_path, "-ar", "16000", "-ac", "1", output_path],
+            capture_output=True, check=True
+        )
+    finally:
+        os.unlink(input_path)
+
+    return output_path
+```
+
+**Error handling**: If ffmpeg is not installed or transcoding fails, report the error and stop the pipeline.
