@@ -1,257 +1,283 @@
 #!/usr/bin/env python3
-"""Labstep query helper. Usage:
-
-  python3 labstep-query.py experiments [--count N] [--search TERM]
-  python3 labstep-query.py experiment <ID_OR_SKXX>
-  python3 labstep-query.py reagents <EXPERIMENT_ID_OR_SKXX>
-  python3 labstep-query.py protocol <PROTOCOL_ID>
-  python3 labstep-query.py protocols [--count N] [--search TERM]
-  python3 labstep-query.py resources [--count N] [--search TERM]
 """
+Labstep CLI Query Tool
+Fast CLI access to Labstep data - list experiments, protocols, resources.
+"""
+
 import os
 import sys
-
-import labstep
-from dotenv import load_dotenv
-
-load_dotenv()
-user = labstep.authenticate(apikey=os.environ.get("LABSTEP_API_KEY"))
-
-
-def _find_experiment(ref: str):
-    """Find experiment by numeric ID or SKXX identifier."""
-    if ref.isdigit():
-        return user.getExperiment(int(ref))
-    # Search by custom_identifier (SKXX)
-    ref_upper = ref.upper()
-    for exp in user.getExperiments(count=200):
-        if (getattr(exp, "custom_identifier", "") or "").upper() == ref_upper:
-            return exp
-    return None
+import json
+import argparse
+import urllib.request
+import urllib.parse
+import ssl
+from datetime import datetime
 
 
-def cmd_experiments(args):
-    count = 10
-    search = None
-    i = 0
-    while i < len(args):
-        if args[i] == "--count" and i + 1 < len(args):
-            count = int(args[i + 1]); i += 2
-        elif args[i] == "--search" and i + 1 < len(args):
-            search = args[i + 1]; i += 2
-        else:
-            i += 1
-    exps = user.getExperiments(count=count, search_query=search) if search else user.getExperiments(count=count)
-    for e in exps:
-        sk = getattr(e, "custom_identifier", "") or ""
-        author = getattr(e, "author", None)
-        author_name = ""
-        if author:
-            if isinstance(author, dict):
-                name = author.get("name") or author.get("full_name") or author.get("username") or ""
-            else:
-                name = getattr(author, "full_name", None) or getattr(author, "name", None) or getattr(author, "email", "")
-            if name:
-                author_name = f" [{name}]"
-        print(f"{sk} (ID {e.id}){author_name}: {e.name}")
-
-
-def cmd_experiment(args):
-    exp = _find_experiment(args[0])
-    if not exp:
-        print(f"Experiment '{args[0]}' not found."); return
-    sk = getattr(exp, "custom_identifier", "") or ""
-    print(f"# {sk}: {exp.name} (ID {exp.id})")
-    print(f"Link: https://app.labstep.com/experiment-workflow/{exp.id}")
-    
-    # Author / Creator
-    author = getattr(exp, "author", None)
-    if author:
-        if isinstance(author, dict):
-            author_name = author.get("name") or author.get("full_name") or author.get("username") or "Unknown"
-        else:
-            author_name = getattr(author, "full_name", None) or getattr(author, "name", None) or getattr(author, "email", "Unknown")
-        print(f"Author: {author_name}")
-    
-    # Collaborators
+def load_env_file(path):
+    """Load key=value pairs from .env file into os.environ."""
     try:
-        collaborators = exp.getCollaborators()
-        if collaborators:
-            collab_names = []
-            for c in collaborators:
-                name = getattr(c, "full_name", None) or getattr(c, "name", None) or getattr(c, "email", None)
-                if name:
-                    collab_names.append(name)
-            if collab_names:
-                print(f"Collaborators: {', '.join(collab_names)}")
-    except Exception:
+        with open(os.path.expanduser(path)) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                if '=' in line:
+                    key, val = line.split('=', 1)
+                    os.environ[key] = val
+    except FileNotFoundError:
         pass
-    
-    print()
-
-    # Protocols
-    protos = exp.getProtocols()
-    if protos:
-        print("## Protocols")
-        for p in protos:
-            print(f"  - {p.name} (ID {p.id})")
-        print()
-
-    # Data fields
-    fields = exp.getDataFields()
-    if fields:
-        print("## Data Fields")
-        for f in fields:
-            val = getattr(f, "value", None) or getattr(f, "number", None) or ""
-            unit = getattr(f, "unit", "") or ""
-            if val:
-                print(f"  - {f.label}: {val} {unit}".strip())
-            else:
-                print(f"  - {f.label}: (empty)")
-        print()
-
-    # Files
-    files = exp.getFiles()
-    if files:
-        print("## Files")
-        for fi in files:
-            print(f"  - {getattr(fi, 'name', '?')}")
-        print()
-
-    # Comments
-    comments = exp.getComments()
-    if comments:
-        print("## Comments")
-        for c in comments:
-            print(f"  - {getattr(c, 'body', '')[:120]}")
 
 
-def cmd_reagents(args):
-    exp = _find_experiment(args[0])
+# Load .env from project root or ~/.openclaw/.env
+load_env_file(os.path.join(os.path.dirname(__file__), '..', '..', '.env'))
+load_env_file('~/.openclaw/.env')
+
+# API Configuration
+API_KEY = os.environ.get('LABSTEP_API_KEY')
+if not API_KEY:
+    print("Error: LABSTEP_API_KEY not found. Set it in .env or ~/.openclaw/.env", file=sys.stderr)
+    sys.exit(1)
+BASE_URL = "https://api.labstep.com"
+
+# SSL context (Labstep API needs this)
+ssl_context = ssl.create_default_context()
+ssl_context.check_hostname = False
+ssl_context.verify_mode = ssl.CERT_NONE
+
+
+def api_call(endpoint, params=None):
+    """Make API call to Labstep."""
+    url = f"{BASE_URL}{endpoint}"
+    if params:
+        query = "&".join([f"{k}={urllib.parse.quote(str(v))}" for k, v in params.items()])
+        url = f"{url}?{query}"
+
+    req = urllib.request.Request(url, headers={"apikey": API_KEY})
+    with urllib.request.urlopen(req, context=ssl_context) as response:
+        return json.loads(response.read().decode())
+
+
+def list_experiments(search=None, count=20):
+    """List recent experiments with SK numbers."""
+    params = {"count": str(count)}
+    if search:
+        params["search_query"] = search
+
+    data = api_call("/api/generic/experiment-workflow", params)
+    experiments = data.get("items", [])
+
+    if not experiments:
+        print("No experiments found.")
+        return
+
+    print(f"Found {len(experiments)} experiment(s):\n")
+    print("-" * 80)
+
+    for exp in experiments:
+        exp_id = exp.get("id", "N/A")
+        name = exp.get("name", "Untitled")
+        custom_id = exp.get("custom_identifier", "")
+        # Get author from entity_users_preview
+        author = "Unknown"
+        entity_users = exp.get("entity_users_preview", [])
+        if entity_users:
+            user = entity_users[0].get("user", {})
+            author = user.get("name", "Unknown")
+        created = exp.get("created_at", "")[:10] if exp.get("created_at") else ""
+
+        if custom_id:
+            print(f"{custom_id}: {name} by {author} ({created})")
+        else:
+            print(f"ID:{exp_id}: {name} by {author} ({created})")
+
+
+def get_experiment(sk_number):
+    """Get experiment details by SK number."""
+    # Search by custom identifier (SK number)
+    data = api_call("/api/generic/experiment-workflow", {"search_query": sk_number, "count": "10"})
+    experiments = data.get("items", [])
+
+    # Find exact match
+    exp = None
+    for e in experiments:
+        if e.get("custom_identifier") == sk_number:
+            exp = e
+            break
+
     if not exp:
-        print(f"Experiment '{args[0]}' not found."); return
-    sk = getattr(exp, "custom_identifier", "") or ""
-    print(f"# Reagents for {sk}: {exp.name}")
-    print()
+        print(f"Experiment {sk_number} not found.")
+        return
 
-    protos = exp.getProtocols()
-    if not protos:
-        print("No protocols linked — cannot determine reagents."); return
+    # Get author from entity_users_preview
+    author = "Unknown"
+    entity_users = exp.get("entity_users_preview", [])
+    if entity_users:
+        user = entity_users[0].get("user", {})
+        author = user.get("name", "Unknown")
 
-    seen = set()
-    for proto in protos:
-        inv = proto.getInventoryFields()
-        if inv:
-            print(f"## From protocol: {proto.name}")
-            for item in inv:
-                name = getattr(item, "name", None) or "Unknown"
-                amount = getattr(item, "amount", "") or ""
-                units = getattr(item, "units", "") or ""
-                key = name.lower()
-                if key not in seen:
-                    seen.add(key)
-                    line = f"  - {name}"
-                    if amount or units:
-                        line += f": {amount} {units}".strip()
-                    print(line)
-            print()
+    print(f"\n{'='*80}")
+    print(f"Experiment: {exp.get('name', 'Untitled')}")
+    print(f"SK Number: {exp.get('custom_identifier', 'N/A')}")
+    print(f"ID: {exp.get('id')}")
+    print(f"Author: {author}")
+    print(f"Created: {exp.get('created_at', '')[:10]}")
+    print(f"State: {exp.get('state', 'unknown')}")
+    print(f"URL: https://app.labstep.com/experiment-workflow/{exp.get('id')}")
+    print(f"{'='*80}\n")
 
-
-def cmd_protocol(args):
-    proto = user.getProtocol(int(args[0]))
-    sk = getattr(proto, "custom_identifier", "") or ""
-    print(f"# Protocol: {proto.name} (ID {proto.id})")
-    if sk:
-        print(f"Identifier: {sk}")
-    print()
-
-    steps = proto.getSteps()
-    if steps:
-        print("## Steps")
-        for idx, s in enumerate(steps, 1):
-            name = getattr(s, "name", "") or f"Step {idx}"
-            body = getattr(s, "body", "") or ""
-            print(f"  {idx}. {name}")
-            if body:
-                print(f"     {body[:200]}")
+    # Print description/entry if available
+    entry = exp.get('entry', '')
+    if entry:
+        print("Description:")
+        print(entry[:500] + "..." if len(entry) > 500 else entry)
         print()
 
-    inv = proto.getInventoryFields()
-    if inv:
-        print("## Reagents / Inventory")
-        for item in inv:
-            name = getattr(item, "name", "?")
-            amount = getattr(item, "amount", "") or ""
-            units = getattr(item, "units", "") or ""
-            line = f"  - {name}"
-            if amount or units:
-                line += f": {amount} {units}".strip()
-            print(line)
-        print()
 
-    fields = proto.getDataFields()
-    if fields:
-        print("## Data Fields")
-        for f in fields:
-            val = getattr(f, "value", None) or ""
-            print(f"  - {f.label}: {val}" if val else f"  - {f.label}")
-
-    timers = proto.getTimers()
-    if timers:
-        print("\n## Timers")
-        for t in timers:
-            print(f"  - {getattr(t, 'name', '?')}: {getattr(t, 'hours', 0)}h {getattr(t, 'minutes', 0)}m {getattr(t, 'seconds', 0)}s")
-
-
-def cmd_protocols(args):
-    count = 10
-    search = None
-    i = 0
-    while i < len(args):
-        if args[i] == "--count" and i + 1 < len(args):
-            count = int(args[i + 1]); i += 2
-        elif args[i] == "--search" and i + 1 < len(args):
-            search = args[i + 1]; i += 2
-        else:
-            i += 1
-    protos = user.getProtocols(count=count, search_query=search) if search else user.getProtocols(count=count)
-    for p in protos:
-        sk = getattr(p, "custom_identifier", "") or ""
-        print(f"{sk} (ID {p.id}): {p.name}" if sk else f"ID {p.id}: {p.name}")
+def list_protocols(search=None, count=20):
+    """List protocols."""
+    params = {"count": str(count)}
+    if search:
+        params["search_query"] = search
+    
+    data = api_call("/api/generic/protocol", params)
+    protocols = data.get("protocols", [])
+    
+    if not protocols:
+        print("No protocols found.")
+        return
+    
+    print(f"Found {len(protocols)} protocol(s):\n")
+    print("-" * 80)
+    
+    for proto in protocols:
+        proto_id = proto.get("id", "N/A")
+        name = proto.get("name", "Untitled")
+        author = proto.get("author", {}).get("name", "Unknown") if proto.get("author") else "Unknown"
+        created = proto.get("created_at", "")[:10] if proto.get("created_at") else ""
+        
+        print(f"ID:{proto_id}: {name} by {author} ({created})")
 
 
-def cmd_resources(args):
-    count = 10
-    search = None
-    i = 0
-    while i < len(args):
-        if args[i] == "--count" and i + 1 < len(args):
-            count = int(args[i + 1]); i += 2
-        elif args[i] == "--search" and i + 1 < len(args):
-            search = args[i + 1]; i += 2
-        else:
-            i += 1
-    resources = user.getResources(count=count, search_query=search) if search else user.getResources(count=count)
-    for r in resources:
-        print(f"ID {r.id}: {r.name}")
+def list_resources(search=None, count=20):
+    """Search resources/inventory."""
+    params = {"count": str(count)}
+    if search:
+        params["search_query"] = search
+    
+    data = api_call("/api/generic/resource", params)
+    resources = data.get("resources", [])
+    
+    if not resources:
+        print("No resources found.")
+        return
+    
+    print(f"Found {len(resources)} resource(s):\n")
+    print("-" * 80)
+    
+    for res in resources:
+        res_id = res.get("id", "N/A")
+        name = res.get("name", "Untitled")
+        category = res.get("resource_category", {}).get("name", "Uncategorized") if res.get("resource_category") else "Uncategorized"
+        
+        print(f"ID:{res_id}: {name} [{category}]")
 
 
-if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print(__doc__); sys.exit(1)
+def get_reagents(sk_number):
+    """Get reagents/inventory for an experiment."""
+    # First get experiment ID
+    data = api_call("/api/generic/experiment-workflow", {"search_query": sk_number, "count": "10"})
+    experiments = data.get("items", [])
 
-    cmd = sys.argv[1]
-    rest = sys.argv[2:]
+    exp_id = None
+    for e in experiments:
+        if e.get("custom_identifier") == sk_number:
+            exp_id = e.get("id")
+            break
 
-    commands = {
-        "experiments": cmd_experiments,
-        "experiment": cmd_experiment,
-        "reagents": cmd_reagents,
-        "protocol": cmd_protocol,
-        "protocols": cmd_protocols,
-        "resources": cmd_resources,
-    }
-    fn = commands.get(cmd)
-    if not fn:
-        print(f"Unknown command: {cmd}\n{__doc__}"); sys.exit(1)
-    fn(rest)
+    if not exp_id:
+        print(f"Experiment {sk_number} not found.")
+        return
+
+    # Get inventory fields for experiment
+    try:
+        data = api_call(f"/api/generic/experiment-workflow/{exp_id}/inventory-field")
+        fields = data.get("items", [])
+
+        if not fields:
+            print(f"No reagents/inventory found for {sk_number}.")
+            return
+
+        print(f"\nReagents/Inventory for {sk_number}:\n")
+        print("-" * 80)
+
+        for field in fields:
+            name = field.get("name", "Unnamed")
+            amount = field.get("amount", "")
+            units = field.get("units", "")
+            resource = field.get("resource", {}).get("name", "") if field.get("resource") else ""
+
+            print(f"• {name}: {amount} {units} ({resource})")
+
+    except Exception as e:
+        print(f"Could not fetch reagents: {e}")
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Query Labstep electronic lab notebook',
+        prog='labstep-query'
+    )
+    
+    subparsers = parser.add_subparsers(dest='command', help='Commands')
+    
+    # Experiments
+    exp_parser = subparsers.add_parser('experiments', help='List experiments')
+    exp_parser.add_argument('--search', '-s', help='Search query')
+    exp_parser.add_argument('--count', '-n', type=int, default=20, help='Number of results')
+    
+    # Single experiment
+    exp_detail = subparsers.add_parser('experiment', help='Get experiment by SK number')
+    exp_detail.add_argument('sk_number', help='SK number (e.g., SK592)')
+    
+    # Reagents
+    reagent_parser = subparsers.add_parser('reagents', help='Get reagents for experiment')
+    reagent_parser.add_argument('sk_number', help='SK number (e.g., SK592)')
+    
+    # Protocols
+    proto_parser = subparsers.add_parser('protocols', help='List protocols')
+    proto_parser.add_argument('--search', '-s', help='Search query')
+    proto_parser.add_argument('--count', '-n', type=int, default=20, help='Number of results')
+    
+    # Resources
+    res_parser = subparsers.add_parser('resources', help='Search resources/inventory')
+    res_parser.add_argument('--search', '-s', help='Search query')
+    res_parser.add_argument('--count', '-n', type=int, default=20, help='Number of results')
+    
+    args = parser.parse_args()
+    
+    if not args.command:
+        parser.print_help()
+        sys.exit(1)
+    
+    try:
+        if args.command == 'experiments':
+            list_experiments(search=args.search, count=args.count)
+        elif args.command == 'experiment':
+            get_experiment(args.sk_number)
+        elif args.command == 'reagents':
+            get_reagents(args.sk_number)
+        elif args.command == 'protocols':
+            list_protocols(search=args.search, count=args.count)
+        elif args.command == 'resources':
+            list_resources(search=args.search, count=args.count)
+    except urllib.error.HTTPError as e:
+        print(f"API Error: {e.code} - {e.reason}")
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}")
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()
