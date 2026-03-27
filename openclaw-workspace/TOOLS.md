@@ -74,6 +74,13 @@ Format: `🎤 {user} (via {platform}): {cleaned transcript}`
 
 If posting fails, reply with the error and the content that failed to post.
 
+### Step 6: Reply with link
+After posting, reply with a hyperlink to the experiment thread so the user can review:
+
+Format: `Done — voice note added to **{SK}**: https://app.labstep.com/experiment-workflow/{experiment_id}`
+
+The `experiment_id` is available as `exp.id` from the Labstep experiment object fetched in Step 3.
+
 ## Reading Files
 
 To read Excel files (.xlsx), use pandas:

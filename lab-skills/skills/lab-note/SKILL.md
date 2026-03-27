@@ -591,6 +591,14 @@ def upload_file_to_experiment(exp, file_path: str):
     exp.addFile(file_path)
 ```
 
+After posting, reply to the user with a link to the experiment thread:
+
+```
+Done — voice note added to **{SK}**: https://app.labstep.com/experiment-workflow/{exp.id}
+```
+
+The `exp.id` is the numeric experiment ID from the Labstep experiment object.
+
 **Error handling**: If `addComment()` fails, report the error to the user via OpenClaw with the content that failed to post. Do not save locally.
 
 ## Full Pipeline
