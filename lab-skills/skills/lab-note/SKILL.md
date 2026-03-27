@@ -594,7 +594,7 @@ def upload_file_to_experiment(exp, file_path: str):
 After posting, reply to the user with a link to the experiment thread:
 
 ```
-Done — voice note added to **{SK}**: https://app.labstep.com/experiment-workflow/{exp.id}
+Done — voice note added to **{SK}**: https://app.labstep.com/experiment-workflow/{exp.id}/thread
 ```
 
 The `exp.id` is the numeric experiment ID from the Labstep experiment object.
