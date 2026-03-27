@@ -20,10 +20,59 @@ curl -s -X POST "https://api.fireworks.ai/inference/v1/audio/transcriptions" \
   -F "model=whisper-v3"
 ```
 
-The response JSON has a `text` field with the transcription. After transcribing:
-1. Look for an SK number (e.g. SK543) in the transcript
-2. If found, post to the Labstep experiment as a comment
-3. If not found, reply with the transcription and ask which experiment to add it to
+The response JSON has a `text` field with the transcription. After transcribing, follow the **full pipeline** — do NOT post the raw transcript:
+
+### Step 1: Separate command from content
+The transcript often starts with an instruction to you (e.g., "OK, add a voice note to SK599."). Strip this — only the lab note content should be posted. If the entire transcript is just a command with no content, reply asking for the actual note.
+
+### Step 2: Extract SK number
+Look for an SK number (e.g. SK543, SK599) in the transcript using regex `SK\s?\d{3,}`. If not found, reply with the transcription and ask which experiment to add it to.
+
+### Step 3: Fetch experiment context from Labstep
+Before posting, fetch the experiment's metadata for domain vocabulary. This is critical for cleaning the transcript:
+
+```bash
+python3 -c "
+import labstep, os, json
+from dotenv import load_dotenv
+load_dotenv()
+user = labstep.authenticate(apikey=os.environ['LABSTEP_API_KEY'])
+sk = 'SK___'  # Replace with the SK number from Step 2
+results = user.getExperiments(search_query=sk, count=5)
+exp = next((r for r in results if r.custom_identifier and r.custom_identifier.upper() == sk.upper()), None)
+if exp:
+    print('Name:', exp.name)
+    try:
+        protocols = exp.getProtocols()
+        if protocols:
+            state = getattr(protocols[0], 'state', None)
+            body = json.dumps(state)[:1000] if isinstance(state, dict) else str(getattr(protocols[0], 'body', ''))[:1000]
+            print('Protocol:', body)
+    except: pass
+    try:
+        inv = exp.getInventoryFields() if hasattr(exp, 'getInventoryFields') else []
+        print('Reagents:', [f.name for f in inv][:20])
+    except: pass
+    try:
+        comments = exp.getComments()
+        print('Recent comments:', [str(getattr(c, 'body', ''))[:200] for c in (comments[:5] if comments else [])])
+    except: pass
+"
+```
+
+### Step 4: Clean and contextualise the transcript
+Using the experiment context from Step 3, rewrite the transcript as a tidy lab note:
+- Remove filler words ("um", "uh", "like", false starts, repeated words)
+- Fix domain terms using the experiment context (e.g., "see tip seek" → "scTIP-seq", "cube it" → "Qubit")
+- **Preserve the speaker's meaning** — do NOT summarise or add information
+- Output should read like a clean, professional lab note entry
+
+### Step 5: Post to Labstep
+Post the **cleaned** transcript (not the raw one) as a comment:
+
+Format: `🎤 {user} (via {platform}): {cleaned transcript}`
+
+If posting fails, reply with the error and the content that failed to post.
 
 ## Reading Files
 
