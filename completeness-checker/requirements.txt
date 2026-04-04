@@ -1,0 +1,3 @@
+labstep
+requests
+python-dotenv

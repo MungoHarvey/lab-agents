@@ -44,3 +44,7 @@ AGENTS.md
 
 # APM integrated skills
 .github/skills/*-apm/
+
+# completeness-checker runtime files
+completeness-checker/last_checked.json
+completeness-checker/report.json
