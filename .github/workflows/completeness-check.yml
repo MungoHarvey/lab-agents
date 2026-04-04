@@ -1,0 +1,43 @@
+# .github/workflows/completeness-check.yml
+name: Experiment Completeness Check
+
+on:
+  schedule:
+    - cron: '0 9 * * 1-5'  # Weekdays at 09:00 UTC
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r completeness-checker/requirements.txt
+
+      - name: Restore last_checked.json
+        uses: actions/cache@v4
+        with:
+          path: completeness-checker/last_checked.json
+          key: completeness-checker-notified-${{ github.run_id }}
+          restore-keys: completeness-checker-notified-
+
+      - name: Run completeness check
+        env:
+          LABSTEP_API_KEY: ${{ secrets.LABSTEP_API_KEY }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        working-directory: completeness-checker
+        run: python checker.py
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: completeness-report
+          path: completeness-checker/report.json
+          retention-days: 30
