@@ -16,9 +16,8 @@ Use `get_labstep_apikey()` for Labstep authentication:
 ## OneDrive Data Access
 
 - Use `find_onedrive_base()` to auto-detect OneDrive root per OS
-- Data locations:
-  - `<OneDrive root>/Skene lab - WB - 07 scRNA-seq/`
-  - `<OneDrive root>/Skene lab - WB - 03 scTIP-Seq Development/`
+- Libraries are auto-discovered from all subdirectories under the OneDrive base
+- Alternatively, set `DATA_DIR` env var to point directly to your shared data folder
 - Always use retry logic for cloud-synced files (up to 3 retries with 2s, 5s, 10s delays)
 
 ## Metadata Handling

@@ -63,7 +63,7 @@ Read and extract RNA quantification data (Qubit, TapeStation, qPCR) from experim
 
 ### 4. read-from-sharepoint
 
-Read-only access to lab data files from synced OneDrive (SharePoint) folders. Auto-discovers all Skene lab shared libraries.
+Read-only access to lab data files from synced OneDrive (SharePoint) folders. Auto-discovers all shared libraries, or set `DATA_DIR` to your data folder.
 
 ```
 > List all experiment folders in the scRNA-seq library

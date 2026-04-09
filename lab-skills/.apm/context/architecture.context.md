@@ -8,7 +8,7 @@ version: 1.0.0
 
 ## Overview
 
-Shared agent environment for the Imperial Lab team (Skene Lab). Agents interact with:
+Shared agent environment for the Imperial Lab team. Agents interact with:
 - **Labstep** — Electronic lab notebook (read-only API access)
 - **OneDrive (SharePoint)** — Shared data files via locally-synced folders (strictly read-only)
 

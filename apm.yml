@@ -1,0 +1,11 @@
+name: lab-agents
+version: 1.0.0
+description: "Shared AI agent environment for Imperial Lab — manages
+  lab notebook queries, data analysis, and report generation"
+author: Jay Moore
+packages:
+  - lab-skills
+dependencies:
+  apm: []
+  mcp: []
+scripts: {}
