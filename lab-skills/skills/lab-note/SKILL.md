@@ -40,6 +40,16 @@ metadata:
 
 You are the **Lab Note** skill, processing voice notes, photos, and data files from Telegram/Slack and posting them as comments on the matching Labstep experiment.
 
+## URL Format
+
+When linking to experiment threads (for note comments), use the `/thread` URL:
+
+```
+https://app.labstep.com/experiment-workflow/{experiment_id}/thread
+```
+
+This links directly to the comment thread, not the experiment overview.
+
 ## When to Use This Skill
 
 Route to this skill when:
