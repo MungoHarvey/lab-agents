@@ -70,43 +70,28 @@ def find_onedrive_base() -> Path:
 
     raise FileNotFoundError(
         f"OneDrive Imperial folder not found. Searched: {base}\n"
-        "Ensure OneDrive is installed and syncing your shared libraries.\n"
-        "If auto-detection fails, set the DATA_DIR environment variable to your shared folder path."
+        "Ensure OneDrive is installed and syncing the Skene lab shared libraries."
     )
 
 ONEDRIVE_BASE = find_onedrive_base()
 
 def discover_libraries(base: Path) -> dict[str, Path]:
-    """Auto-discover shared libraries under OneDrive base.
-    Scans for all subdirectories and generates short aliases from folder names.
-    If the DATA_DIR environment variable is set, uses that single path instead."""
+    """Auto-discover Skene lab shared libraries under OneDrive base.
+    Scans for folders prefixed with 'Skene lab -' and generates short aliases."""
     import re
-
-    # Allow explicit override via environment variable
-    data_dir = os.environ.get("DATA_DIR")
-    if data_dir:
-        p = Path(data_dir)
-        if p.exists() and p.is_dir():
-            alias = re.sub(r"[^a-z0-9]", "", p.name.lower()) or "data"
-            return {alias: p}
-
     libs = {}
     if not base.exists():
         return libs
     for p in sorted(base.iterdir()):
-        if not p.is_dir():
+        if not p.is_dir() or not p.name.startswith("Skene lab -"):
             continue
-        # Extract a short alias from the folder name
-        # Handles patterns like "Lab - WB - 07 scRNA-seq" → "scrna"
-        parts = p.name.split(" - ")
-        desc = parts[-1] if len(parts) > 1 else p.name
-        match = re.search(r"\d+\s+(.+)$", desc)
+        # Extract the descriptive part after the number, e.g. "07 scRNA-seq" → "scrna"
+        match = re.search(r"\d+\s+(.+)$", p.name.split(" - ")[-1])
         if match:
             alias = re.sub(r"[^a-z0-9]", "", match.group(1).lower())
         else:
-            alias = re.sub(r"[^a-z0-9]", "", desc.lower())
-        if alias:
-            libs[alias] = p
+            alias = re.sub(r"[^a-z0-9]", "", p.name.split(" - ")[-1].lower())
+        libs[alias] = p
     return libs
 
 LIBRARIES = discover_libraries(ONEDRIVE_BASE)
