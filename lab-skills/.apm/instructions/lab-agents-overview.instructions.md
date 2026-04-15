@@ -53,6 +53,11 @@ All skills are located in `.claude/skills/` and are auto-triggered based on cont
 - **Trigger**: OpenClaw delivers audio, image, or file bytes; or user asks to post a note/photo/file to an experiment
 - **Dependencies**: Fireworks Whisper API, Labstep, ffmpeg, Pillow, pandas
 
+### 8. **edison-platform**
+- **Purpose**: Run Edison Scientific tasks via `edison-client` — literature synthesis (LITERATURE / LITERATURE_HIGH), experimental dataset analysis (ANALYSIS), novelty checks (PRECEDENT), cheminformatics (MOLECULES)
+- **Trigger**: "edison", `EdisonClient`, `JobNames`, `run_tasks_until_done`, PaperQA, Kosmos, or needing a cited scientific answer / manuscript review
+- **Dependencies**: `edison-client` Python package, `EDISON_API_KEY` in environment
+
 ## Labstep Credentials
 
 The `labstep` skill uses a service account with read-write access:
