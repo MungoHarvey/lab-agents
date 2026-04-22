@@ -4,6 +4,8 @@ A shared AI coding-agent environment for the Imperial College London Neurogenomi
 
 Compatible with any agent that supports the [Agent Skills](https://github.com/anthropics/skills) standard — [Claude Code](https://docs.anthropic.com/en/docs/claude-code), [OpenCode](https://github.com/opencode-ai/opencode), [GitHub Copilot](https://github.com/features/copilot), and others.
 
+> **Tool layer lives in [`neurogenomics/lab-mcp`](https://github.com/neurogenomics/lab-mcp).** This repo holds the *agent* layer — skills, APM config, OpenClaw workspace. The underlying clients and MCP servers (Labstep today, SharePoint / Slack / HPC later) live in `lab-mcp` and are consumed here via `pip install lab-mcp`.
+
 ## Quick Start
 
 ### Prerequisites

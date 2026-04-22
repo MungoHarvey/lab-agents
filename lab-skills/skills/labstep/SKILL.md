@@ -1,245 +1,115 @@
 ---
 name: labstep
-description: Interact with the Labstep electronic lab notebook API using labstepPy. Use when the user wants to create, read, or manage experiments, protocols, resources, inventory, or other Labstep entities.
+description: Interact with the Labstep electronic lab notebook via the shared lab-mcp client. Use when the user wants to create, read, or manage experiments, protocols, resources, inventory, or other Labstep entities.
 trigger: labstep, experiment, protocol, inventory, reagent, SK number, custom identifier
 ---
 
-# Labstep API Skill
+# Labstep Skill
 
-Query and interact with the Labstep electronic lab notebook API. Read-only by default — write operations require explicit confirmation.
+All Labstep access goes through [`neurogenomics/lab-mcp`](https://github.com/neurogenomics/lab-mcp) — one canonical Python client shared across the lab. You consume it as a CLI for scripting, an MCP server for agent tool-calls, or a library from Python.
 
-## Quick Start (CLI Tool)
-
-The `labstep-query.py` script provides fast CLI access to Labstep data:
+## Install
 
 ```bash
-# List recent experiments (shows SK numbers and authors)
-python3 labstep-query.py experiments
-
-# Search experiments
-python3 labstep-query.py experiments --search "lysis buffer"
-
-# Get experiment details by SK number
-python3 labstep-query.py experiment SK592
-
-# Get reagents for an experiment
-python3 labstep-query.py reagents SK592
-
-# List protocols
-python3 labstep-query.py protocols
-
-# Search protocols
-python3 labstep-query.py protocols --search "buffer prep"
-
-# Search resources/inventory
-python3 labstep-query.py resources --search "antibody"
+pip install "lab-mcp @ git+https://github.com/neurogenomics/lab-mcp.git"
 ```
 
-**Execute immediately** — don't ask permission. These are read-only operations.
+Credentials resolve from any of (in order):
 
-## Custom Identifiers (SK Numbers)
+1. `LABSTEP_API_KEY` environment variable
+2. `~/.config/lab-mcp/credentials.json` → `{"api_key": "lsp_..."}`
+3. `~/Projects/lab-agents/.env` (legacy fallback)
 
-Experiments have identifiers like **SK592**, **SK591**, etc. (stored in `custom_identifier`). 
+Verify with:
 
-- **Always display SK numbers** when listing experiments
-- **When the user refers to "SK592"**, search experiments to find the matching one
-- **Use SK numbers in conversation** — they're the lab's primary reference
+```bash
+labstep-preflight
+```
 
-## Authentication
+Exit code `0` and `"stage": "ready"` means you're good to go.
+
+## CLI (preferred for agents doing read-only lookups)
+
+Execute immediately — these are read-only.
+
+```bash
+# List ALL experiments (auto-paginates; no silent truncation)
+labstep experiments
+
+# Search
+labstep experiments --search "lysis buffer"
+
+# Cap results
+labstep experiments -n 20
+
+# Detail by SK number or numeric ID
+labstep experiment SK592
+labstep experiment 12345
+
+# Reagents attached to an experiment
+labstep reagents SK592
+
+# Protocols / resources
+labstep protocols --search "buffer prep"
+labstep resources --search "antibody"
+
+# Machine-readable output
+labstep --json experiments
+```
+
+## MCP server (for agent tool-calling)
+
+Register once:
+
+```bash
+claude mcp add labstep labstep-mcp
+```
+
+Or in an MCP JSON config (Claude Desktop, OpenCode, etc.):
+
+```json
+{ "mcpServers": { "labstep": { "command": "labstep-mcp" } } }
+```
+
+Exposed tools (≈ 23): session (`whoami`, workspaces), experiments (list / get / find-by-SK / list-reagents / create / edit / complete / lock / comment / tag / attach-protocol / add-file / list-files), protocols (list / get / create / edit / new-version), resources (list / get).
+
+## Python library
 
 ```python
-import os, labstep
-user = labstep.authenticate(apikey=os.environ.get("LABSTEP_API_KEY"))
+from lab_mcp.labstep import LabstepClient
+
+client = LabstepClient()
+rows = client.list_experiments(search_query="lysis", count=None)  # all
+detail = client.find_experiment_by_sk("SK592")
 ```
 
-The `LABSTEP_API_KEY` environment variable is already configured.
+## SK Numbers (custom identifiers)
 
-## Write Access
+Experiments carry identifiers like **SK592**, **SK591**, etc. (`custom_identifier`).
 
-This skill uses a service account with read-write access. Automated pipelines
-(e.g., lab-note skill) may write without confirmation. For interactive
-sessions, describe what will be written before executing.
+- Always display SK numbers when listing experiments.
+- When the user says "SK592", use `labstep experiment SK592` or `client.find_experiment_by_sk("SK592")` — don't try to look it up by numeric ID.
+- SK numbers are the lab's primary reference — use them in conversation.
 
-## When to Execute Immediately
+## URL format
 
-**Run Python code immediately without asking permission when:**
+Canonical URL is `https://app.labstep.com/experiment-workflow/{experiment_id}`. The older `/experiment/{id}` form returns 404. `lab_mcp.labstep.bodies.experiment_url()` returns the right shape.
 
-- User asks about experiments, protocols, or lab inventory
-- User asks "show me my recent experiments"
-- User references an experiment by SKXX identifier (e.g., "SK592") — look it up
-- User asks about a specific protocol by name
-- User wants to look up resources or reagents
-- User asks "what did I do today/this week in the lab"
+## Write operations
 
-**Never ask "should I proceed?" or "would you like me to?"** — just execute and show results immediately.
+By default agents should confirm with the user before invoking write tools (`labstep_create_experiment`, `labstep_edit_experiment`, `labstep_add_experiment_comment`, `labstep_add_experiment_tag`, `labstep_attach_protocol`, `labstep_add_experiment_file`, protocol create/edit, etc.). For automated pipelines (e.g. the `lab-note` skill) writes are allowed without interactive confirmation.
 
-**Never make up experiment names or IDs.** Always fetch real data from the API.
+## When to execute immediately
 
-## URL Format for Links
+Run the CLI / MCP tool immediately, without asking permission, when:
 
-When linking to experiments in Labstep, use this exact format:
+- User asks about experiments, protocols, or lab inventory.
+- User references an experiment by SK identifier (e.g. "SK592").
+- User asks about a specific protocol by name.
+- User asks "what did I do today/this week in the lab".
 
-- **Correct:** `https://app.labstep.com/experiment-workflow/{experiment_id}`
-- **Incorrect:** `https://www.labstep.com/experiment/{experiment_id}` (old format, returns 404)
+**Never make up experiment names or IDs.** Always fetch real data.
 
-Example: `https://app.labstep.com/experiment-workflow/367165`
+## Why this used to be three different scripts
 
-## Package
-
-The package is `labstep`. Install with `pip install labstep` if not present.
-
-## Key Entity Methods
-
-### User (`user`)
-All operations start from the authenticated `user` object.
-
-**Get single entities:**
-- `user.getExperiment(id)`, `user.getProtocol(id)`, `user.getResource(id)`
-- `user.getResourceItem(id)`, `user.getResourceCategory(id)`, `user.getResourceLocation(guid)`
-- `user.getWorkspace(id)`, `user.getDevice(id)`, `user.getFile(id)`
-- `user.getOrganization()`, `user.getAPIKey(id)`
-
-**List entities (all support `count`, `search_query`):**
-- `user.getExperiments()`, `user.getProtocols()`, `user.getResources()`
-- `user.getResourceItems()`, `user.getResourceCategorys()`, `user.getResourceLocations()`
-- `user.getWorkspaces()`, `user.getDevices()`, `user.getTags()`
-- `user.getOrderRequests()`, `user.getPurchaseOrders()`
-
-### Experiments
-
-The `custom_identifier` field on experiments holds the **SK number** (e.g. `"SK543"`), which is the lab's primary unique identifier for experiments. Use it to look up or display experiments:
-```python
-exp = user.getExperiment(id)
-print(exp.custom_identifier)  # e.g. "SK543"
-```
-
-```python
-exp = user.newExperiment('My Experiment')
-exp.edit(name=None, entry=None, started_at=None)
-exp.delete()
-exp.lock() / exp.unlock()
-exp.complete()
-exp.addProtocol(protocol_id)
-exp.getProtocols()
-exp.addDataField(fieldName, fieldType, value=None, date=None, number=None, unit=None)
-exp.getDataFields()
-exp.addTable(name, data)   # data is dict with 'rowCount','columnCount','data'
-exp.getTables()
-exp.addFile(filepath)
-exp.getFiles()
-exp.addTag(name)
-exp.getTags()
-exp.addComment(body, filepath=None)
-exp.getComments()
-exp.addToCollection(collection_id)
-exp.getCollections()
-exp.shareWith(workspace_id, permission='view')
-exp.assign(user_id)
-exp.getCollaborators()
-exp.getSharelink()
-exp.addSignature(statement=None)
-exp.export(path)
-exp.addInventoryField(name, amount=None, units=None, resource_id=None)
-exp.addConditions(number_of_conditions)
-exp.addChemicalReaction()
-```
-
-### Protocols
-```python
-protocol = user.newProtocol('My Protocol')
-protocol.edit(name=None, body=None)
-protocol.delete()
-protocol.newVersion()
-protocol.getVersions()
-protocol.addSteps(N)
-protocol.getSteps()
-protocol.addDataField(fieldName, fieldType, value=None)
-protocol.getDataFields()
-protocol.addInventoryField(name, amount=None, units=None, resource_id=None)
-protocol.getInventoryFields()
-protocol.addTimer(name, hours=0, minutes=0, seconds=0)
-protocol.getTimers()
-protocol.addTable(name, data)
-protocol.getTables()
-protocol.addFile(filepath=None, rawData=None)
-protocol.getFiles()
-protocol.addTag(name)
-protocol.addComment(body, filepath=None)
-protocol.addToCollection(collection_id)
-protocol.shareWith(workspace_id, permission='view')
-protocol.export(path)
-```
-
-### Resources / Inventory
-```python
-resource = user.newResource('My Reagent', resource_category_id=None)
-resource.edit(name)
-resource.delete()
-resource.getResourceCategory()
-resource.setResourceCategory(resource_category_id)
-resource.newItem(name=None, availability=None, amount=None, unit=None, resource_location_guid=None)
-resource.getItems()
-resource.addChemicalMetadata(structure=None, iupac_name=None, cas=None, molecular_formula=None,
-                              molecular_weight=None, smiles=None, density=None, inchi=None)
-resource.getChemicalMetadata()
-resource.addMetadata(fieldName, fieldType, value=None)
-resource.getMetadata()
-resource.addTag(name)
-resource.addComment(body, filepath=None)
-resource.shareWith(workspace_id)
-resource.newOrderRequest(quantity=1)
-
-# ResourceItem
-item = resource.newItem()
-item.edit(name=None, availability=None, amount=None, unit=None, resource_location_guid=None)
-item.setLocation(resource_location_guid, position=None, size=None)
-item.getLocation()
-item.getLineageParents()
-item.getLineageChildren()
-
-# ResourceLocation
-loc = user.newResourceLocation('Freezer -80')
-loc.edit(name)
-loc.getItems()
-loc.getInnerLocations()
-loc.addInnerLocation(name, position=None, size=None)
-loc.setOuterLocation(outer_location_guid)
-loc.createPositionMap(rowCount, columnCount, data)
-```
-
-## Common Patterns
-
-**Search experiments:**
-```python
-exps = user.getExperiments(search_query='PCR', count=20)
-for e in exps:
-    print(e.custom_identifier, e.name)  # e.g. "SK543 PCR optimisation"
-```
-
-**Add metadata to experiment:**
-```python
-exp.addDataField('Temperature', 'numeric', number=37, unit='°C')
-exp.addDataField('Notes', 'default', value='Some text here')
-exp.addDataField('Date Started', 'date', date='2026-02-25')
-```
-
-**Create resource with items:**
-```python
-resource = user.newResource('Anti-GFP Antibody')
-item = resource.newItem(name='Aliquot 1', amount=100, unit='µL', availability='available')
-```
-
-**Switch workspace then create:**
-```python
-workspaces = user.getWorkspaces()
-user.setWorkspace(workspaces[0].id)
-exp = user.newExperiment('New Experiment')
-```
-
-## Notes
-
-- Most list methods accept `count` (int) and `search_query` (str) parameters.
-- `fieldType` for data fields: `'default'` (text), `'numeric'`, `'date'`, `'file'`
-- Dates are strings in ISO format: `'YYYY-MM-DD'`
-- After login, workspace defaults to the user's personal workspace; use `setWorkspace()` to switch.
-- Entity IDs are integers; resource location GUIDs are strings.
+This repo previously contained `labstep_mirror.py`, `lab-skills/scripts/labstep-query.py`, and `lab-skills/scripts/check_labstep.py`. Each had bugs the others didn't (silent pagination truncation, disabled TLS verification, wrong URL format). All three are replaced by `lab-mcp`, which has one test-covered client that every entry point shares. See the [migration notes](https://github.com/neurogenomics/lab-mcp/blob/main/docs/migration.md) for details.
