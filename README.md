@@ -24,7 +24,63 @@ Compatible with any agent that supports the [Agent Skills](https://github.com/an
    ```bash
    LABSTEP_API_KEY=your_key_here
    ```
-3. Launch your agent from the repo directory and ask what skills are available.
+3. Install the shared Labstep client:
+   ```bash
+   uv tool install "lab-mcp @ git+https://github.com/neurogenomics/lab-mcp.git"
+   ```
+   This puts four commands on your PATH: `labstep`, `labstep-preflight`, `labstep-mirror`, `labstep-mcp`.
+4. Verify credentials:
+   ```bash
+   labstep-preflight
+   ```
+   You should see `"stage": "ready"`.
+5. Launch your agent from the repo directory and ask what skills are available.
+
+## lab-mcp CLI reference
+
+The [`lab-mcp`](https://github.com/neurogenomics/lab-mcp) package provides one canonical client for all Labstep access. Three interfaces, one codebase.
+
+### CLI
+
+```bash
+labstep experiments                       # list ALL (auto-paginates)
+labstep experiments --search "lysis buffer"
+labstep experiments -n 5                  # cap results
+labstep experiment SK592                  # detail by SK number
+labstep reagents SK592                    # inventory fields
+labstep protocols --search "buffer prep"
+labstep resources --search "antibody"
+labstep --json experiments                # machine-readable output
+```
+
+### MCP server (for agent tool-calling)
+
+```bash
+claude mcp add labstep labstep-mcp
+```
+
+Or in an MCP JSON config (Claude Desktop, OpenCode, etc.):
+```json
+{ "mcpServers": { "labstep": { "command": "labstep-mcp" } } }
+```
+
+### Python library
+
+```python
+from lab_mcp.labstep import LabstepClient
+
+client = LabstepClient()
+rows = client.list_experiments(search_query="lysis", count=None)  # all pages
+detail = client.find_experiment_by_sk("SK592")
+client.add_experiment_comment(detail["id"], "Reviewed 2026-04-24")
+```
+
+### Credentials
+
+Resolved in order:
+1. `LABSTEP_API_KEY` environment variable
+2. `~/.config/lab-mcp/credentials.json` — `{"api_key": "lsp_..."}`
+3. `~/Projects/lab-agents/.env` (legacy fallback)
 
 ## Skills
 
