@@ -2,7 +2,7 @@
 description: Lab-agents project overview, available skills, team workflows, and credentials
 applyTo: "**/*"
 author: Jay Moore
-version: 1.0.0
+version: 1.1.0
 ---
 
 # Lab-Agents Team Environment
@@ -12,10 +12,11 @@ version: 1.0.0
 This is a shared agent environment for the Imperial Lab team. Agents have access to:
 - **Labstep**: Lab notebook (read-write access)
 - **OneDrive (SharePoint)**: Shared data files via synced OneDrive folders (strictly read-only)
+- **Edison Platform**: External scientific AI (literature synthesis, dataset analysis, novelty checks, cheminformatics)
 
 ## Available Skills
 
-All skills are located in `.claude/skills/` and are auto-triggered based on context. Refer to each skill's `SKILL.md` for detailed usage:
+Skills are installed by APM and auto-triggered based on context. Refer to each skill's `SKILL.md` for detailed usage:
 
 ### 1. **labstep**
 - **Purpose**: Fetch and query Labstep experiments, protocols, and inventory
